@@ -1,49 +1,22 @@
-# Scripts de Instalação Automatizada
+# 🚀Scripts de Automação (Shell)
 
-Este repositório contém uma coleção de scripts shell (`.sh`) para automatizar a instalação e configuração de diversos softwares em sistemas Linux, com foco principal em distribuições baseadas em Debian (como Ubuntu).
+Este repositório é uma coleção de scripts shell (`.sh`) que criei para automatizar tarefas de administração de sistemas, instalações de software e configurações gerais em servidores Linux (principalmente Ubuntu).
 
-## 🚀 Sobre o Projeto
+## 🎯 Sobre o Projeto
 
-O objetivo deste projeto é economizar tempo e garantir instalações consistentes e livres de erros. Cansado de digitar os mesmos 50 comandos toda vez que sobe um servidor novo? Este repositório é a solução.
+O objetivo é simples: **fazer mais, digitando menos**.
 
-## ✨ Funcionalidades Principais
+Cada script aqui foi projetado para resolver um problema específico, economizar tempo e garantir que as instalações e configurações sejam consistentes e livres de erros.
 
-* **Automatização Completa:** Execute um único arquivo para ter um serviço complexo instalado e configurado.
-* **Interatividade:** Os scripts solicitam informações essenciais (como senhas) de forma segura.
-* **Limpeza Inteligente:** Opção de remover (purgar) instalações anteriores antes de começar.
-* **Verificação de Erros:** Os scripts param se um passo crítico falhar, informando o problema.
-* **Logs Claros:** Saída formatada com [INFO], [AVISO] e [ERRO] para fácil acompanhamento.
+## 🗂️ Scripts Disponíveis
 
----
+Abaixo está uma lista de todos os scripts disponíveis e o que eles fazem.
 
-## Scripts Disponíveis
+| Script | Sistema(s) Suportado(s) | Descrição |
+| :--- | :--- | :--- |
+| `instalar_zabbix_server.sh` | Ubuntu 24.04 | Instala o **Zabbix Server 7.4** completo (Server, Frontend, Apache, MariaDB) de forma automatizada. |
+| `instalar_zabbix_agent.sh` | Ubuntu 24.04, 22.04 | Instala e configura o **Zabbix Agent 7.4**. Detecta a versão do Ubuntu e pergunta o IP do Server e o Hostname. |
 
-Aqui está a lista dos scripts atualmente disponíveis no projeto:
-
-### 1. Instalador do Zabbix 7.4 (Ubuntu 24.04)
-
-* **Arquivo:** `instalar_zabbix_ubuntu_24.04.sh`
-* **Descrição:** Automatiza a instalação completa do Zabbix Server 7.4 no Ubuntu 24.04.
-* **Componentes Instalados:**
-    * Zabbix Server
-    * Zabbix Frontend
-    * Zabbix Agent
-    * Apache2 (Servidor Web)
-    * MariaDB (MySQL) (Banco de Dados)
-* **Funcionalidades Específicas:**
-    * Instala todas as dependências (PHP, `pv`, etc.).
-    * Solicita uma senha para o banco de dados de forma segura.
-    * Cria o banco de dados e o usuário automaticamente.
-    * Importa o schema do Zabbix com uma barra de progresso.
-    * Configura o `zabbix_server.conf` com a senha do DB.
-    * Corrige o erro 404 do Apache ativando o `a2enconf zabbix`.
-    * Inicia e habilita todos os serviços.
-
-### 2. (Seu Próximo Script Aqui)
-
-* **Arquivo:** `nome-do-script.sh`
-* **Descrição:** O que este script faz?
-* **Componentes Instalados:** ...
 
 ---
 
@@ -59,12 +32,26 @@ O uso geral para qualquer script neste repositório é simples:
 
 2.  **Dê permissão de execução** ao script desejado:
     ```bash
-    chmod +x instalar_zabbix_ubuntu_24.04.sh
+    chmod +x nome_do_script.sh
     ```
 
 3.  **Execute o script** (a maioria requer `sudo` para instalar pacotes):
     ```bash
-    sudo ./instalar_zabbix_ubuntu_24.04.sh
+    sudo ./nome_do_script.sh
     ```
 
-Siga as instruções que o script apresentar no terminal.
+Siga as instruções que cada script apresentar no terminal.
+
+## 🤝 Contribuição
+
+Contribuições são bem-vindas! Se você tem uma melhoria para um script existente ou quer adicionar um novo:
+
+1.  Faça um "Fork" do projeto.
+2.  Crie uma nova "Branch" (`git checkout -b feature/MeuScriptIncrivel`).
+3.  Faça o "Commit" das suas mudanças (`git commit -m 'Adiciona script para XYZ'`).
+4.  Faça o "Push" para a Branch (`git push origin feature/MeuScriptIncrivel`).
+5.  Abra um "Pull Request".
+
+## 📝 Licença
+
+Este projeto é licenciado sob a Licença MIT.
