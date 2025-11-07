@@ -1,0 +1,160 @@
+#!/bin/bash
+
+# Script para instalação automatizada do Zabbix 7.4 no Ubuntu 24.04
+# --- Configurações Iniciais ---
+set -e
+set -o pipefail
+
+# --- Cores para os Logs ---
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+log_info() {
+    echo -e "${GREEN}[INFO] $(date +'%T'): $1${NC}"
+}
+log_warn() {
+    echo -e "${YELLOW}[AVISO] $(date +'%T'): $1${NC}"
+}
+log_error() {
+    echo -e "${RED}[ERRO] $(date +'%T'): $1${NC}"
+}
+
+# --- 1. Verificação de Root ---
+if [ "$(id -u)" -ne 0 ]; then
+  log_error "Este script precisa ser executado como root. Use: sudo ./instalar_zabbix.sh"
+  exit 1
+fi
+
+# --- 2. Limpeza (Opcional) ---
+log_info "Verificando instalações anteriores do Zabbix..."
+if dpkg -l | grep -q "zabbix-"; then
+    log_warn "Uma instalação anterior do Zabbix foi encontrada."
+    read -p "Você deseja remover (purgar) todos os pacotes do Zabbix existentes? (s/n): " REMOVE_OLD
+    if [[ "$REMOVE_OLD" == "s" || "$REMOVE_OLD" == "S" ]]; then
+        log_info "Parando serviços e removendo pacotes antigos do Zabbix..."
+        systemctl stop zabbix-server zabbix-agent 2>/dev/null || true
+        apt-get purge -y "zabbix-*"
+        apt-get autoremove -y
+        log_info "Limpeza concluída."
+    else
+        log_warn "Continuando sem limpar. A instalação pode falhar."
+    fi
+else
+    log_info "Nenhuma instalação anterior do Zabbix encontrada."
+fi
+
+# --- 3. Obter Senha do Banco de Dados ---
+log_info "Configuração do Banco de Dados"
+while true; do
+    read -s -p "Por favor, digite a senha para o usuário 'zabbix' do MySQL: " ZABBIX_DB_PASSWORD
+    echo
+    read -s -p "Confirme a senha: " ZABBIX_DB_PASSWORD_CONFIRM
+    echo
+    if [ "$ZABBIX_DB_PASSWORD" == "$ZABBIX_DB_PASSWORD_CONFIRM" ]; then
+        if [ -z "$ZABBIX_DB_PASSWORD" ]; then
+            log_warn "A senha não pode estar em branco. Tente novamente."
+        else
+            log_info "Senha do banco de dados definida."
+            break
+        fi
+    else
+        log_error "As senhas não coincidem. Tente novamente."
+    fi
+done
+
+# --- 4. Instalar Dependências (Apache, MariaDB e PV) ---
+log_info "Atualizando a lista de pacotes do sistema (apt update)..."
+apt-get update
+
+log_info "Instalando dependências: Apache, MariaDB, pv e outros..."
+apt-get install -y mariadb-server mariadb-client apache2 php-mysql wget libapache2-mod-php pv
+
+log_info "Iniciando e habilitando serviços de dependência..."
+systemctl enable mariadb
+systemctl start mariadb
+systemctl enable apache2
+systemctl start apache2
+
+# --- 5. Configurar o Banco de Dados MariaDB ---
+log_info "Configurando o banco de dados MariaDB..."
+mysql -e "DROP DATABASE IF EXISTS zabbix;"
+mysql -e "DROP USER IF EXISTS 'zabbix'@'localhost';"
+mysql -e "CREATE DATABASE zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;"
+mysql -e "CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '${ZABBIX_DB_PASSWORD}';"
+mysql -e "GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';"
+mysql -e "SET GLOBAL log_bin_trust_function_creators = 1;"
+log_info "Banco de dados 'zabbix' e usuário 'zabbix' criados com sucesso."
+
+# --- 6. Instalar Repositório e Pacotes Zabbix ---
+ZABBIX_REPO_URL="https://repo.zabbix.com/zabbix/7.4/release/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.4+ubuntu24.04_all.deb"
+ZABBIX_REPO_DEB="zabbix-release_latest_7.4+ubuntu24.04_all.deb"
+
+log_info "Baixando o pacote do repositório Zabbix 7.4..."
+wget -O ${ZABBIX_REPO_DEB} ${ZABBIX_REPO_URL}
+
+log_info "Instalando o repositório Zabbix..."
+dpkg -i ${ZABBIX_REPO_DEB}
+
+log_info "Atualizando lista de pacotes do Zabbix (apt update)..."
+apt-get update
+
+log_info "Instalando Zabbix Server, Frontend e Agent..."
+apt-get install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent
+
+# --- 7. Importar Schema do Zabbix (Com Busca Dinâmica) ---
+log_info "Procurando arquivo de schema do banco de dados (server.sql.gz)..."
+
+SCHEMA_FILE=$(find /usr/share -name server.sql.gz | grep mysql | head -n 1)
+
+if [ -z "$SCHEMA_FILE" ]; then
+    log_error "Arquivo 'server.sql.gz' não encontrado em /usr/share!"
+    log_error "A instalação do pacote 'zabbix-sql-scripts' pode ter falhado."
+    log_error "Tente executar: sudo apt-get install --reinstall zabbix-sql-scripts"
+    exit 1
+fi
+
+log_info "Arquivo de schema encontrado em: ${SCHEMA_FILE}"
+log_info "Importando o schema do banco de dados Zabbix... (Isso pode levar um momento)"
+log_info "A barra de progresso abaixo é da importação do banco de dados:"
+
+zcat ${SCHEMA_FILE} | pv | mysql -uzabbix -p"${ZABBIX_DB_PASSWORD}" -Dzabbix
+
+log_info "Schema do banco de dados importado com sucesso."
+
+# --- 8. Configurar o Zabbix Server ---
+log_info "Configurando /etc/zabbix/zabbix_server.conf..."
+sed -i "s/^# DBPassword=.*/DBPassword=${ZABBIX_DB_PASSWORD}/" /etc/zabbix/zabbix_server.conf
+sed -i "s/^DBPassword=.*/DBPassword=${ZABBIX_DB_PASSWORD}/" /etc/zabbix/zabbix_server.conf
+log_info "Senha do banco de dados configurada no zabbix_server.conf."
+
+# --- 9. Habilitar Configuração do Apache ---
+# *** CORREÇÃO v5: Comando adicionado para corrigir o 404 ***
+log_info "Habilitando a configuração 'zabbix.conf' do Apache..."
+a2enconf zabbix
+
+# --- 10. Iniciar Serviços e Concluir ---
+log_info "Reiniciando e habilitando todos os serviços..."
+systemctl restart zabbix-server zabbix-agent apache2
+systemctl enable zabbix-server zabbix-agent apache2
+
+log_info "Aguardando o Zabbix Server iniciar..."
+sleep 10 
+
+if systemctl is-active --quiet zabbix-server; then
+    log_info "O Zabbix Server está ATIVO e em execução!"
+else
+    log_error "O Zabbix Server FALHOU ao iniciar."
+    log_warn "Verifique os logs com: journalctl -xeu zabbix-server.service"
+    exit 1
+fi
+
+IP_ADDR=$(hostname -I | awk '{print $1}')
+log_info "--------------------------------------------------------"
+log_info "🎉 Instalação Concluída! 🎉"
+log_info "Acesse o frontend do Zabbix em: http://${IP_ADDR}/zabbix"
+log_info ""
+log_info "Usuário padrão: Admin"
+log_info "Senha padrão: zabbix"
+log_info "--------------------------------------------------------"
