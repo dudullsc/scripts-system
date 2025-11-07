@@ -1,0 +1,135 @@
+#!/bin/bash
+
+# --- Cores para os Logs ---
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+log_info() {
+    echo -e "${GREEN}[INFO] $(date +'%T'): $1${NC}"
+}
+log_warn() {
+    echo -e "${YELLOW}[AVISO] $(date +'%T'): $1${NC}"
+}
+log_error() {
+    echo -e "${RED}[ERRO] $(date +'%T'): $1${NC}"
+}
+
+# --- 1. Verificação de Root ---
+if [ "$(id -u)" -ne 0 ]; then
+  log_error "Este script precisa ser executado como root. Use: sudo ./instalar_agent.sh"
+  exit 1
+fi
+
+log_info "Iniciando a instalação do Zabbix Agent (Cliente)..."
+
+# --- 2. Obter Entradas do Usuário ---
+while true; do
+    read -p "Qual é o endereço IP do seu Zabbix Server?: " SERVER_IP
+    if [ -z "$SERVER_IP" ]; then
+        log_warn "O IP do servidor não pode estar em branco. Tente novamente."
+    else
+        log_info "Zabbix Server IP: ${SERVER_IP}"
+        break
+    fi
+done
+
+while true; do
+    read -p "Qual será o 'Hostname' deste cliente? (Padrão: $(hostname)): " AGENT_HOSTNAME
+    if [ -z "$AGENT_HOSTNAME" ]; then
+        AGENT_HOSTNAME=$(hostname)
+        log_info "Usando o hostname padrão: ${AGENT_HOSTNAME}"
+        break
+    else
+        log_info "Hostname definido como: ${AGENT_HOSTNAME}"
+        break
+    fi
+done
+
+# --- 3. Instalar Dependências e Detectar Versão ---
+log_info "Instalando dependências (wget, lsb-release)..."
+export DEBIAN_FRONTEND=noninteractive
+apt-get update > /dev/null
+apt-get install -y wget lsb-release > /dev/null
+
+log_info "Detectando a versão do Ubuntu..."
+UBUNTU_VERSION=$(lsb_release -rs)
+ZABBIX_REPO_URL=""
+ZABBIX_REPO_DEB="zabbix-release-agent.deb"
+
+if [ "$UBUNTU_VERSION" == "24.04" ]; then
+    log_info "Ubuntu 24.04 (Noble) detectado."
+    ZABBIX_REPO_URL="https://repo.zabbix.com/zabbix/7.4/release/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.4+ubuntu24.04_all.deb"
+elif [ "$UBUNTU_VERSION" == "22.04" ]; then
+    log_info "Ubuntu 22.04 (Jammy) detectado."
+    ZABBIX_REPO_URL="https://repo.zabbix.com/zabbix/7.4/release/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.4+ubuntu22.04_all.deb"
+else
+    log_error "Versão do Ubuntu não suportada: ${UBUNTU_VERSION}"
+    log_error "Este script suporta apenas 24.04 (Noble) e 22.04 (Jammy)."
+    exit 1
+fi
+
+# --- 4. Limpar e Instalar Repositório ---
+log_info "Limpando configurações de repositório anteriores..."
+rm -f /etc/apt/sources.list.d/zabbix.list
+rm -f ${ZABBIX_REPO_DEB}
+
+log_info "Baixando o pacote do repositório Zabbix 7.4 para ${UBUNTU_VERSION}..."
+wget -O ${ZABBIX_REPO_DEB} ${ZABBIX_REPO_URL} 2>/dev/null
+dpkg -i ${ZABBIX_REPO_DEB} > /dev/null
+
+# --- 5. Instalar o Zabbix Agent ---
+log_info "Atualizando pacotes e instalando o Zabbix Agent..."
+apt-get update > /dev/null
+# Remove qualquer resquício da tentativa falha e instala
+apt-get remove -y zabbix-agent 2>/dev/null || true
+apt-get install -y zabbix-agent
+
+# --- 6. Configurar o Agente ---
+log_info "Configurando /etc/zabbix/zabbix_agentd.conf..."
+CONF_FILE="/etc/zabbix/zabbix_agentd.conf"
+
+if [ ! -f "$CONF_FILE" ]; then
+    log_error "O arquivo de configuração $CONF_FILE não foi encontrado!"
+    log_error "A instalação do 'zabbix-agent' falhou. Verifique os erros acima."
+    exit 1
+fi
+
+# Faz backup do arquivo original
+cp $CONF_FILE "${CONF_FILE}.bak"
+
+sed -i "s/^Server=127.0.0.1/Server=${SERVER_IP}/" $CONF_FILE
+sed -i "s/^# ServerActive=127.0.0.1/ServerActive=${SERVER_IP}/" $CONF_FILE
+sed -i "s/^Hostname=Zabbix server/Hostname=${AGENT_HOSTNAME}/" $CONF_FILE
+
+log_info "Arquivo de configuração atualizado."
+
+# --- 7. Iniciar e Habilitar o Serviço ---
+log_info "Reiniciando e habilitando o serviço zabbix-agent..."
+systemctl restart zabbix-agent
+systemctl enable zabbix-agent
+
+log_info "Aguardando 3 segundos para o serviço estabilizar..."
+sleep 3
+
+# --- 8. Verificação Final e Próximos Passos ---
+if systemctl is-active --quiet zabbix-agent; then
+    log_info "🎉 O Zabbix Agent está ATIVO e rodando!"
+else
+    log_error "O Zabbix Agent FALHOU ao iniciar."
+    log_warn "Verifique os logs com: journalctl -xeu zabbix-agent"
+    exit 1
+fi
+
+log_info "---------------------------------------------------------"
+log_info "🚨 AÇÃO NECESSÁRIA NO SEU ZABBIX SERVER 🚨"
+log_info "1. Acesse o frontend do seu Zabbix Server."
+log_info "2. Vá em 'Configuration' -> 'Hosts' -> 'Create host'."
+log_info "3. No campo 'Host name', digite o nome EXATO: ${GREEN}${AGENT_HOSTNAME}${NC}"
+log_info "4. Adicione-o a um grupo (ex: 'Linux servers')."
+log_info "5. Em 'Interfaces', clique em 'Add' -> 'Agent'."
+log_info "   - Digite o IP desta máquina cliente."
+log_info "6. Vá para a aba 'Templates' e adicione 'Linux by Zabbix agent'."
+log_info "7. Clique em 'Add' (ou 'Update') para salvar."
+log_info "---------------------------------------------------------"
