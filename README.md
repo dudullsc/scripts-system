@@ -68,17 +68,3 @@ O uso geral para qualquer script neste repositório é simples:
     ```
 
 Siga as instruções que o script apresentar no terminal.
-
-## 🤝 Contribuição
-
-Contribuições são muito bem-vindas! Se você tem um script que gostaria de adicionar ou uma melhoria para um script existente:
-
-1.  Faça um "Fork" do projeto.
-2.  Crie uma nova "Branch" (`git checkout -b feature/MeuScriptIncrivel`).
-3.  Faça o "Commit" das suas mudanças (`git commit -m 'Adiciona script para XYZ'`).
-4.  Faça o "Push" para a Branch (`git push origin feature/MeuScriptIncrivel`).
-5.  Abra um "Pull Request".
-
-## 📝 Licença
-
-Este projeto é licenciado sob a Licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
